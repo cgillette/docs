@@ -1,0 +1,126 @@
+# Insurance quote integration
+
+This guide outlines the procedures for incorporating the insurance quote creation process, powered by Way, into a partner website. Although primarily intended for developers, the inclusion of high-level diagrams and a sample website facilitates a comprehensive understanding of the flow's user experience. The documentation encompasses this guide, an API documentation, and a sample website.
+
+  
+
+This guide is for partners who wish to control how the list of quotes is displayed on their website. The list of quotes is retrieved from the Way APIs, displayed by the partner on its website, and once one of the quote is selected, Way handles the rest of the flow. At a high level, this is the interaction:
+
+1. The partner sends mandatory and optional application details to Way
+2. The partner displays the RC1 quotes based on the data received from Way
+3. The applicant selects one of the quotes
+4. The partner sets the src URL to the one, provided by Way as part of the quote, into the iframe used to display Way's flow on partner's website
+5. When the Way flow is completed/canceled, the partner website (iframe parent) is notified
+6. If the partner provided a webhookUrl as part of #1, details of the new policy are shared with the partner
+
+  
+
+## Way Environments
+
+A sandbox environment is provided to facilitate the integration effort:
+
+    *   Sandbox: [https://sandbox.way.com](https://sandbox.way.com)
+    *   Production: [https://www.way.com](https://www.way.com)
+
+
+
+## Authentication
+
+A set of credentials (username/password) should be requested from Way in order to access the services and APIs described below. It should be noted that the sandbox and production credentials are different.
+
+The authentication is done through the basic authentication scheme, a base64 encoding of `username` : `password` and passed in the authentication header as "Basic `base64 string` "
+
+  
+
+## Example website
+
+The example website can be accessed at [https://sandbox.way.com/way-samples/insurance/quote\_flow1/index.html?username=\`username\`&password=\`password\`](https://sandbox.way.com/way-samples/insurance/quote_flow1/index.html?username={username}&password={password}). Replace `username` and `password` with the sandbox credentials provided by Way.
+
+As an example, the following data can be used, but you can input any: "1210 Eleanor St, Austin, TX 78721" for the address, 2018, Ford, Explorer for the vehicle. While going through the flow, the OTP is 9876.
+
+  
+
+The git repo containing the code powering the website can be found at [https://bitbucket.org/wayteam/way-docs-samples](https://bitbucket.org/wayteam/way-docs-samples)
+
+
+
+![](https://t9017059410.p.clickup-attachments.com/t9017059410/8f9ed558-3645-45c3-b459-97d13806bec7/Insurance-sampleApp.png)
+
+  
+
+## Integration Flow
+
+
+![](https://t9017059410.p.clickup-attachments.com/t9017059410/033d8be0-7d04-4e5e-b5aa-cdb7be4201f0/WayIntegration-Insurance-Flow-QuoteList%20(6).png)
+
+  
+
+Each number below provides more details about the steps described in the above flow
+
+(1) Provide the mandatory applicant data to the [/quoteRequest API](https://sandbox.way.com/way-doc/insurance.html#/developers/sendQuoteRequest) call to retrieve a list of RC1 quotes. Any filled optional field described in the API doc will improve the quote accuracy.
+
+  
+
+```json
+{
+  firstName,
+  lastName,
+  email,
+  phoneNumber, // accepts several formats: "+1 555 555-5555",
+               // "15555555555", "(555) 555-5555", etc.
+  driverLicenseNumber,
+  dateOfBirth, // yyyy-MM-dd
+  gender, // "M" or "F". If not available, using "M" may result in higher premium estimates.
+  maritalStatus, // "M" or "S". If not available, using "S" may result in higher premium estimates.
+  address: { addressLine1, city, state, postalCode },
+  vehicles: [{ vin, year, make, model }] // Either VIN or Year/Make/Model
+}
+```
+
+  
+
+(2) The API returns a transactionId that is used to retrieve the corresponding list of quotes
+
+(3) and (4) Invoke the [/results](https://sandbox.way.com/way-doc/insurance.html#/developers/getQuoteResults) API in an active wait loop to retrieve "quotes" as they become available from the carriers. Polling for a total of 100s is recommended to ensure that the maximum amount of results are pulled or until the response indicates that no more updates are available.
+
+(5), (6) and (7) When the user selects a quote, the iframeURL field from the quote data should be loaded through an iframe, which will trigger the Way application flow. Once the Way flow is completed or is interrupted, the iframe parent will be informed through the jsBridge.closeAndNotify() method call and the iframe should be removed/hidden
+
+(8) When a webhook URL is present in the [/quoteRequest](https://sandbox.way.com/way-doc/insurance.html#/developers/sendQuoteRequest) API call, policy information will be forwarded with the following payload (all field values are strings):
+
+  
+
+```json
+{
+  transactionId, // Way's transactionId
+  policyNumber,
+  policyEffectiveDate,  // yyyy-MM-dd
+  policyExpirationDate, // yyyy-MM-dd
+  term,
+  carrierLogo,
+  carrierName,
+  policyDocumentUrl, // policy document download URL
+  insuranceCardUrl   // insurance card download URL
+}
+```
+
+  
+
+The integrator needs to take into account tab reloads and browser history management. It's important to highlight that in case of a disruption in the process, if the iframe is reloading the same iframeURL, the user will return to the exact page they were on when the interruption occurred.
+
+  
+
+## Vehicle Information
+
+Vehicle information is mandatory to retrieve the list of quotes. It can be provided as either the VIN number or the combination of Year/Make/Model. In order to simplify the capture of the latter, [three APIs](/api-reference/insurance/vehicle-apis/get-way-insurancev1publicvehicleyears) are exposed to populate the different selectors on the partner website.
+
+
+
+<img style={{margin:'auto'}} src="https://t9017059410.p.clickup-attachments.com/t9017059410/443e46c8-35cf-46b0-969f-16c1dfc08b57/WayIntegration-Insurance-Vehicle%20(3).png" width="500"/>
+
+
+
+## References
+
+ Sample website:
+    *   Website: [https://sandbox.way.com/way-samples/insurance/quote\_flow1/index.html?username=\`username\`&password=\`password\`](https://sandbox.way.com/way-samples/insurance/quote_flow1/index.html?username={username}&password={password}). Replace `username` and `password` with the sandbox credentials provided by Way
+    *   Repo: [https://bitbucket.org/wayteam/way-docs-samples](https://bitbucket.org/wayteam/way-docs-samples)

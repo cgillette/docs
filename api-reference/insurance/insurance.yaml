@@ -1,0 +1,845 @@
+openapi: 3.0.0
+info:
+  title: Way Insurance Apis
+  description:
+    Let your customers receive live quotes from many carriers by integrating the following APIs within your website.<br/>
+    Please refer to this <a href='https://doc.clickup.com/9017059410/p/h/8cqau2j-237/0ff8cb3486e8bc6'>document</a> to get an overview of the integration points, and the flow that will be enabled on your website. In addition, a sample website is provided as part of a public git repo. <br/>
+    <br/>
+    <strong>Authentication</strong><br/>
+    A set of credentials (username/password) should be requested from Way in order to access the services and APIs described below. It should be noted that the sandbox and production credentials are different.<br/>
+    The authentication is done through the basic authentication scheme.
+  version: 1.0.0
+servers:
+  - url: https://sandbox.way.com
+    description: Sandbox server
+  - url: https://www.way.com
+    description: Production server
+tags:
+  - name: Quote Apis
+    description: Trigger the Way flow to list quotes and purchase an insurance policy
+  - name: Vehicle Apis
+    description: Enable selection of Year/Make/Model used for quoting when a VIN is not provided
+paths:
+  /way-insurance/v1/public/vendor/quoteRequest:
+    post:
+      tags:
+        - Quote Apis
+      description:
+        This endpoint creates a new quote request. A new rate request is initiated with insurance carriers. The returned transactionId can then be used to request the list of quotes (including coverage and premium) using the Quote Request Results endpoint.<br/>
+        Any optional data provided will increase the accuracy of the quotes. Once the rest of the flow is delegated to Way, any passed field value will be confirmed and or requested to ensure that most up-to-date and accurate data is used to build the final quote.<br/>
+        In the event where a mandatory field is not captured by the website, you can pass a default value. For example, if maritalStatus and/or gender is not available, respectively using a value of 'S' (for single), and/or 'M' (for male) will output a list of quotes with potentially higher premiums than if they married and/or female were passed to the API.<br/>
+        Note that the payload of the webhook called when an insurance policy gets bound is described in WebhookPolicy.
+      operationId: sendQuoteRequest
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteRequest"
+      responses:
+        200:
+          description: Save quote Successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveQuoteSuccess"
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveQuoteErrorResponse"
+          description: Bad request
+      security:
+        - bearerAuth: []
+  /way-insurance/v1/public/vendor/quoteRequest/{transactionId}/results:
+    get:
+      tags:
+        - Quote Apis
+      description: Provide the transactionId of the quote request (obtained from Create Quote Request call) to see if results have been received for this quote request. It may take up to 20 seconds to receive the first results, then this API should be called at regular intervals (5s is a suggested value) to incrementally retrieve all the quotes as they become available. All results are usually received within 100s.
+      operationId: getQuoteResults
+      parameters:
+        - name: transactionId
+          in: path
+          description: transactionId to get quote results
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+      responses:
+        200:
+          description: list of insurance quotes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteResponse"
+      security:
+        - bearerAuth: []
+
+  /way-insurance/v1/public/vehicle/years:
+    get:
+      tags:
+        - Vehicle Apis
+      description: Returns the list of manufacturing years falling within the allowable range utilized for insurance quoting purposes
+      operationId: getYears
+      responses:
+        200:
+          description: list of vehicle years
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YearResponse"
+
+  /way-insurance/v1/public/vehicle/{year}:
+    get:
+      tags:
+        - Vehicle Apis
+      description: Returns the list of vehicle makes corresponding to a specific year
+      operationId: getMakes
+      parameters:
+        - name: year
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: integer
+      responses:
+        200:
+          description: list of vehicle years
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MakesResponse"
+
+  /way-insurance/v1/public/vehicle/{year}/{make}:
+    get:
+      tags:
+        - Vehicle Apis
+      description: Returns the list of models for a corresponding year and make
+      operationId: getModels
+      parameters:
+        - name: year
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: integer
+        - name: make
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+      responses:
+        200:
+          description: list of models for a make in an year
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelResponse"
+
+  /way-insurance/v1/public/vendor/document/download:
+    post:
+      tags:
+        - Document Apis
+      description:
+        Use this endpoint to download the insurance card or policy document URL.
+        Note that the endpoint has two media types in the response.
+      operationId: getDocument
+      parameters:
+        - name: transactionId
+          in: query
+          description: TransactionId of the user
+          required: true
+          schema:
+            type: string
+        - name: documentId
+          in: query
+          description: DocumentId received in the webhook for corresponding documents
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Successfully fetched the document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiStatus:
+                    type: string
+                    example: "Success"
+                  message:
+                    type: string
+                    example: "Successfully fetched the document"
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+                description: PDF content is displayed in binary which can be saved into a file
+                example: "%PDF-1.5\n%����\n3 0 obj\n<</ColorSpace/DeviceGray/Subtype/Image/Height 170/Filter/FlateDecode/Type/XObject/Width 564/Length 5279/BitsPerComponent 8>>stream\n……"
+
+      security:
+        - bearerAuth: []
+
+components:
+  schemas:
+    QuoteRequest:
+      required:
+        - email
+        - firstName
+        - lastName
+        - phoneNumber
+        - driverLicenseNumber
+        - dateOfBirth
+        - gender
+        - maritalStatus
+        - address
+        - vehicles
+        - webhookURL
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: Test
+        lastName:
+          type: string
+          example: Way
+        email:
+          type: string
+          example: "test@way.com"
+        phoneNumber:
+          type: string
+          example: "+1 1234567899"
+        driverLicenseNumber:
+          type: string
+          example: "E186****"
+        dateOfBirth:
+          type: string
+          format: "yyyy-MM-dd"
+          example: "1980-05-11"
+        gender:
+          type: string
+          enum: [M, F]
+          example: F
+          description: Providing gender can help us get accurate rates. Specifying (M) may result in higher rates.
+        maritalStatus:
+          type: string
+          enum: [M, S]
+          example: S
+          description: (M)arried or (S)ingle. Specifying (S) may result in higher rates.
+        address:
+          type: object
+          properties:
+            addressLine1:
+              type: string
+              example: 47627 Lakeview Blvd
+            addressLine2:
+              type: string
+              example:
+            city:
+              type: string
+              example: Fremont
+            state:
+              type: string
+              example: CA
+            postalCode:
+              type: string
+              example: 94538
+            county:
+              type: string
+              example: Alameda
+          required:
+            - addressLine1
+            - city
+            - state
+            - postalCode
+        vehicles:
+          type: array
+          items:
+            $ref: "#/components/schemas/vehicle"
+          description: Either year/make/model or VIN details need to be submitted
+        additionalDrivers:
+          type: array
+          items:
+            $ref: "#/components/schemas/driver"
+        ownHome:
+          type: string
+          enum: [Yes, No]
+          example: Yes
+        student:
+          type: boolean
+          enum: [true, false]
+          example: true
+        industry:
+          type: string
+          enum:
+            [
+              01(Homemaker(full-time)),
+              02(Retired(full-time)),
+              03(Unemployed),
+              04(Student(full-time)),
+              AA(Agriculture/Forestry/Fishing),
+              AB(Art/Design/Media),
+              AC(Banking/Finance/Real Estate),
+              AD(Business/Sales/Office),
+              AE(Construction/Energy/Mining),
+              AF(Education/Library),
+              AG(Engineer/Architect/Science/Math),
+              AH(Food Service/Hotel Services),
+              AJ(Government/Military),
+              AK(Information Technology),
+              AL(Insurance),
+              AM(Legal/Law Enforcement/Security),
+              AN(Medical/Social Services/Religion),
+              AP(Personal Care/Service),
+              AQ(Production/Manufacturing),
+              AR(Repair/Maintenance/Grounds),
+              AS(Sports/Recreation),
+              AT(Travel/Transportation/Storage),
+            ]
+          example: AG
+        education:
+          type: string
+          enum:
+            [
+              Bachelors Degree,
+              Masters Degree,
+              Ph. D/Doctorate,
+              Medical Degree,
+              Law Degree,
+              No High School Diploma,
+              High School Diploma,
+              Associates Degree,
+              Some College - No Degree,
+              Vocational/Technical Degree,
+            ]
+          example: Bachelors Degree
+        movingViolations:
+          type: string
+          enum: [Yes, No]
+        atFaultAccidents:
+          type: string
+          enum: [Yes, No]
+        currentlyInsured:
+          type: string
+          enum: [Yes, No]
+        webhookURL:
+          type: string
+          description: <pushback URL to be provided by partner to which policy document details will be sent>. The policy details payload is described in WebhookPolicy
+          example: https://myserver.com/webhook/way_policy_details
+
+    address:
+      type: object
+      properties:
+        addressLine1:
+          type: string
+          example: 47627 Lakeview Blvd
+        addressLine2:
+          type: string
+          example:
+        city:
+          type: string
+          example: Fremont
+        state:
+          type: string
+          example: CA
+        postalCode:
+          type: string
+          example: 94538
+        county:
+          type: string
+          example: Alameda
+      required:
+        - addressLine1
+        - city
+        - state
+        - postalCode
+    vehicle:
+      type: object
+      properties:
+        year:
+          type: string
+          example: 2019
+        make:
+          type: string
+          example: HYUNDAI
+        model:
+          type: string
+          example: ACCENT SE
+        vin:
+          type: string
+          example: 3KPC24***********
+        annualMileage:
+          type: string
+          example: 8000
+      required:
+        - make
+        - model
+        - year
+    driver:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: Joe
+        lastName:
+          type: string
+          example: Smith
+        driverLicenseNumber:
+          type: string
+          example: E18****
+        dateOfBirth:
+          type: string
+          format: "yyyy-MM-dd"
+          example: "1982-05-11"
+        gender:
+          type: string
+          enum: [M(male), F(female)]
+          example: M
+        maritalStatus:
+          type: string
+          enum: [M(married), S(single)]
+          example: S
+        relation:
+          type: string
+          enum: [S(spouse), C(child), R(relative), N(non relative), P(parent)]
+          example: R
+    SaveQuoteSuccess:
+      type: object
+      properties:
+        apiStatus:
+          type: string
+          example: Success
+        message:
+          type: string
+          example: User signed up successfully
+        transactionId:
+          type: string
+          example: 701dbe44-5a07-41ea-aa8d-845719acdc01
+    SaveQuoteErrorResponse:
+      type: object
+      properties:
+        apiStatus:
+          type: string
+          example: Failure
+        message:
+          type: string
+          example: Bad Request
+        errorMap:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            WAY_IN_1: Email id cannot be null
+            WAY_IN_2: First name cannot be null
+            WAY_IN_3: Last name cannot be null
+            WAY_IN_4: Phone number cannot be null
+            WAY_IN_9: Date of birth cannot be null
+            WAY_IN_10: Vehicle details cannot be null
+            WAY_IN_11: Vehicle year cannot be null
+            WAY_IN_12: Vehicle make cannot be null
+            WAY_IN_13: Vehicle model cannot be null
+            WAY_IN_21: Driving license number cannot be null
+            WAY_IN_22: Gender cannot be null
+            WAY_IN_23: Marital status cannot be null
+            WAY_IN_24: Address cannot be null
+            WAY_IN_34: Vehicle vin cannot be null
+
+        errorCode:
+          type: string
+          example: WAY_022
+    QuoteResponse:
+      type: object
+      properties:
+        apiStatus:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Successfully fetched quote request
+        quotes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Quote"
+    Quote:
+      type: object
+      properties:
+        agentNumber:
+          type: string
+          example: +1 (408) 637-5330
+        liabilityCoverage:
+          description: Insurance coverage that meets state's insurance coverage requirements
+          type: object
+          properties:
+            coverages:
+              type: array
+              items:
+                $ref: "#/components/schemas/Coverage"
+            defaultCoverage:
+              type: object
+              properties:
+                bodilyInjury:
+                  type: string
+                  example: 15/30
+                propertyDamage:
+                  type: string
+                  example: 5
+                collision:
+                  type: string
+                  example: 1
+                comprehensive:
+                  type: string
+                  example: 1
+                term:
+                  type: integer
+                  example: 12
+
+        minimumCoverage:
+          description: Liability coverage with comprehensive/collision deductibles
+          type: object
+          properties:
+            coverages:
+              type: array
+              items:
+                $ref: "#/components/schemas/Coverage"
+            defaultCoverage:
+              type: object
+              properties:
+                bodilyInjury:
+                  type: string
+                  example: 15/30
+                propertyDamage:
+                  type: string
+                  example: 5
+                collision:
+                  type: string
+                  example: 1
+                comprehensive:
+                  type: string
+                  example: 1
+                term:
+                  type: integer
+                  example: 12
+
+        premiumCoverage:
+          description: Minimum coverage with higher insurance coverage amount. Comprehensive/Collision deductibles does not change
+          type: object
+          properties:
+            coverages:
+              type: array
+              items:
+                $ref: "#/components/schemas/Coverage"
+            defaultCoverage:
+              type: object
+              properties:
+                bodilyInjury:
+                  type: string
+                  example: 100/300
+                propertyDamage:
+                  type: string
+                  example: 100
+                collision:
+                  type: string
+                  example: 1
+                comprehensive:
+                  type: string
+                  example: 1
+                term:
+                  type: integer
+                  example: 12
+        customCoverages:
+          type: object
+          properties:
+            coverages:
+              type: array
+              items:
+                $ref: "#/components/schemas/Coverage"
+
+    Coverage:
+      type: object
+      properties:
+        companyId:
+          type: string
+          example: 123
+          description: Internal company ID to determine the carrier
+        companyName:
+          type: string
+          example: BridgerAuto
+          description: Insurance carrier name
+        numOfCars:
+          type: integer
+          example: 1
+          description: Total number of user vehicles
+        numOfDrivers:
+          type: integer
+          example: 2
+          description: Total number of drivers
+        logoPath:
+          type: string
+          example: https://www.itcratingservices.com/webservices/imp/api/companies/au/8917191/logo/color_200x200.png
+          description: The logoURL for the carrier
+        paymentAmount:
+          type: object
+          example: 61.12
+          description: Monthly payment amount
+        paymentPlan:
+          enum: [Monthly, Paid-In-Full]
+          example: Monthly
+        averageRating:
+          type: object
+          example: 4.2
+          description: Average user rating for the carrier
+        totalReviews:
+          type: integer
+          example: 2300
+          description: Total user reviews on the carrier
+        totalPremium:
+          type: object
+          example: 532.00
+          description: Total premium for the policy
+        term:
+          type: integer
+          example: 6
+          description: Policy term duration
+        onlineBinding:
+          type: boolean
+          example: false
+        coverageType:
+          enum: [minimum, liability, premium]
+          example: liability
+        quoteTransactionId:
+          type: string
+          example: 701dbe44-5a07-41ea-aa8d-845719acdc99
+          description: QuoteTransactionId varies for each quote and used for internal use
+        yearlySavings:
+          type: number
+          example: 123.23
+          description: Average Yearly Savings for the user compared to market when the plan is selected
+        iframeURL:
+          type: string
+          description: To start the quoting flow powered by Way, this url should be set in the src attribute of an iframe. Alternatively, this url can be opened in a new tab.
+          example: https://staging.way.com/insurance-earnin-steps?way-query-params
+
+    YearResponse:
+      type: object
+      properties:
+        apiStatus:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Successfully fetched quote request
+        years:
+          type: array
+          items:
+            type: string
+          example:
+            [
+              "1971",
+              "1972",
+              "1973",
+              "1974",
+              "1975",
+              "1976",
+              "1977",
+              "1978",
+              "1979",
+              "1980",
+              "1981",
+              "1982",
+              "1983",
+              "1984",
+              "1985",
+              "1986",
+              "1987",
+              "1988",
+              "1989",
+              "1990",
+              "1991",
+              "1992",
+              "1993",
+              "1994",
+              "1995",
+              "1996",
+              "1997",
+              "1998",
+              "1999",
+              "2000",
+              "2001",
+              "2002",
+              "2003",
+              "2004",
+              "2005",
+              "2006",
+              "2007",
+              "2008",
+              "2009",
+              "2010",
+              "2011",
+              "2012",
+              "2013",
+              "2014",
+              "2015",
+              "2016",
+              "2017",
+              "2018",
+              "2019",
+              "2020",
+              "2021",
+              "2022",
+              "2023",
+              "2024",
+            ]
+
+    MakesResponse:
+      type: object
+      properties:
+        apiStatus:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Successfully fetched the makes
+        makes:
+          type: array
+          items:
+            type: string
+          example:
+            [
+              "ACURA",
+              "ALFA ROMEO",
+              "ASTON MARTIN",
+              "AUDI",
+              "AUTOMOBILI PININFARINA",
+              "BENTLEY",
+              "BMW",
+              "BRIGHTDROP",
+              "BUGATTI",
+              "BUICK",
+              "CADILLAC",
+              "CHEVROLET",
+              "CHRYSLER",
+              "CRUISE",
+              "DODGE",
+              "FERRARI",
+              "FIAT",
+              "FISKER",
+              "FORD",
+              "GENESIS",
+              "GMC",
+              "HONDA",
+              "HYUNDAI",
+              "INFINITI",
+              "JAGUAR",
+              "JEEP",
+              "KIA",
+              "LAMBORGHINI",
+              "LAND ROVER",
+              "LEXUS",
+              "LINCOLN",
+              "LORDSTOWN",
+              "LUCID MOTORS",
+              "MASERATI",
+              "MAZDA",
+              "MCLAREN",
+              "MERCEDES BENZ",
+              "MINI",
+              "MITSUBISHI",
+              "NISSAN",
+              "POLESTAR",
+              "PORSCHE",
+              "RAM",
+              "RIVIAN",
+              "ROLLS ROYCE",
+              "SUBARU",
+              "TESLA",
+              "TOYOTA",
+              "VINFAST",
+              "VOLKSWAGEN",
+              "VOLVO",
+            ]
+
+    ModelResponse:
+      type: object
+      properties:
+        apiStatus:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Successfully fetched models
+        models:
+          type: array
+          items:
+            type: string
+          example:
+            [
+              "4RUNNER LIMITED",
+              "4RUNNER PREMI",
+              "4RUNNER SE",
+              "4RUNNER SR5",
+              "4RUNNER T",
+              "4RUNNER TRD OFF ROAD",
+              "4RUNNER TRD PRO",
+              "4RUNNER TRD SPORT",
+              "BZ4X LIMITED",
+              "BZ4X XLE",
+              "CAMRY LE",
+              "CAMRY SE",
+              "CAMRY SE NIGHT SHADE",
+              "CAMRY TRD",
+              "CAMRY XLE",
+              "CAMRY XSE",
+              "COROLLA CROSS L",
+              "COROLLA CROSS LE",
+              "COROLLA CROSS S",
+              "COROLLA CROSS SE",
+              "COROLLA CROSS XLE",
+              "COROLLA CROSS XSE",
+              "COROLLA LE",
+              "COROLLA SE",
+              "COROLLA XLE",
+            ]
+
+    PolicyResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          example: abe08949-1e2b-4bff-baaa-d4119eb5da5f
+        policyNumber:
+          type: string
+          example: PL12345
+        policyEffectiveDate:
+          type: string
+          example: 2022-05-01
+        policyExpirationDate:
+          type: string
+          example: 2022-11-01
+        term:
+          type: integer
+          example: 6
+        carrierLogo:
+          type: string
+          example: https://way-images.s3-us-west-1.amazonaws.com/Travelers.jpg
+          description: Carrier Logo URL
+        carrierName:
+          type: string
+          example: Travelers
+        policyDocumentUrl:
+          type: string
+          example: https://xxxxxx.com/document
+          description: Download URL of the Policy Document for the binded policy
+        insuranceCardUrl:
+          type: string
+          example: https://xxxxxx.com.com/insruance-card
+          description: Download URL of the Insurance card for the policy
+
+  securitySchemes:
+    bearerAuth: # <-- arbitrary name for the security scheme
+      type: http
+      scheme: bearer
